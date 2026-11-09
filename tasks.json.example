@@ -1,0 +1,8 @@
+[
+  {
+    "id": 1,
+    "description": "Пример задачи",
+    "completed": false,
+    "priority": "normal"
+  }
+]
