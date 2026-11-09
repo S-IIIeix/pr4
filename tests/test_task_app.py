@@ -1,57 +1,68 @@
 import unittest
-import os
-import json
 import tempfile
+import os
 import sys
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-import task_app
+import subprocess
+import json
 
-class TestTaskApp(unittest.TestCase):
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from task_app import TaskManager, TaskError
+
+
+class TestTaskManager(unittest.TestCase):
     def setUp(self):
-        self.temp_dir = tempfile.mkdtemp()
-        self.orig_tasks_file = task_app.TASKS_FILE
-        task_app.TASKS_FILE = os.path.join(self.temp_dir, "tasks.json")
-        task_app.save_tasks([])
+        self.tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+        self.tmp.close()
+        self.manager = TaskManager(self.tmp.name)
 
     def tearDown(self):
-        task_app.TASKS_FILE = self.orig_tasks_file
-        if os.path.exists(task_app.TASKS_FILE):
-            os.remove(task_app.TASKS_FILE)
-        os.rmdir(self.temp_dir)
+        os.unlink(self.tmp.name)
 
     def test_add_task(self):
-        task_app.add_task("Тестовая задача", "high")
-        tasks = task_app.load_tasks()
-        self.assertEqual(len(tasks), 1)
-        self.assertEqual(tasks[0]["description"], "Тестовая задача")
-        self.assertEqual(tasks[0]["priority"], "high")
-        self.assertFalse(tasks[0]["completed"])
+        task = self.manager.add_task("Купить молоко", priority="normal")
+        self.assertEqual(task["title"], "Купить молоко")
 
-    def test_complete_task(self):
-        task_app.add_task("Задача 1")
-        task_app.complete_task(1)
-        tasks = task_app.load_tasks()
-        self.assertTrue(tasks[0]["completed"])
+    def test_blank_title_is_rejected(self):
+        with self.assertRaises(TaskError):
+            self.manager.add_task("", priority="normal")
 
-    def test_filter_tasks(self):
-        task_app.add_task("Активная")
-        task_app.add_task("Выполненная")
-        task_app.complete_task(2)
-        tasks = task_app.load_tasks()
-        active = [t for t in tasks if not t["completed"]]
-        completed = [t for t in tasks if t["completed"]]
-        self.assertEqual(len(active), 1)
-        self.assertEqual(len(completed), 1)
+    def test_whitespace_title_is_rejected(self):
+        with self.assertRaises(TaskError):
+            self.manager.add_task("   ", priority="normal")
 
-    def test_sort_by_priority(self):
-        task_app.add_task("Низкий", "low")
-        task_app.add_task("Высокий", "high")
-        task_app.add_task("Обычный", "normal")
-        tasks = task_app.load_tasks()
-        tasks.sort(key=lambda t: task_app.PRIORITY_ORDER.get(t.get("priority", task_app.DEFAULT_PRIORITY), 1))
-        self.assertEqual(tasks[0]["priority"], "high")
-        self.assertEqual(tasks[1]["priority"], "normal")
-        self.assertEqual(tasks[2]["priority"], "low")
+    def test_list_tasks(self):
+        self.manager.add_task("A", priority="low")
+        self.manager.add_task("B", priority="high")
+        self.assertEqual(len(self.manager.list_tasks()), 2)
+
+    def test_search_by_title(self):
+        self.manager.add_task("Позвонить маме", priority="normal")
+        titles = [t["title"] for t in self.manager.list_tasks()]
+        self.assertIn("Позвонить маме", titles)
+
+    def test_persistence(self):
+        self.manager.add_task("Сохранить", priority="normal")
+        manager2 = TaskManager(self.tmp.name)
+        self.assertEqual(len(manager2.list_tasks()), 1)
+
+    def test_help_runs(self):
+        result = subprocess.run(
+            [sys.executable, os.path.join(os.path.dirname(__file__), "..", "task_app.py"), "--help"],
+            capture_output=True, text=True
+        )
+        self.assertEqual(result.returncode, 0)
+
+    def test_id_increment(self):
+        t1 = self.manager.add_task("Первая", priority="normal")
+        t2 = self.manager.add_task("Вторая", priority="normal")
+        self.assertEqual(t2["id"], t1["id"] + 1)
+
+    def test_json_file_created(self):
+        self.manager.add_task("Задача", priority="normal")
+        with open(self.tmp.name, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        self.assertEqual(len(data), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

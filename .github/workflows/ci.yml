@@ -1,0 +1,116 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+env:
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Show versions and commit
+        run: |
+          python --version
+          echo "Commit: ${{ github.sha }}"
+      - name: Compile task_app.py and tests/*.py
+        run: python -m py_compile task_app.py tests/*.py
+
+  unit_tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    needs: validate
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Run unittest
+        run: python -m unittest discover -s tests -v
+
+  package:
+    name: Package artifact
+    runs-on: ubuntu-latest
+    needs: unit_tests
+    if: |
+      github.ref == 'refs/heads/main' ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare dist
+        run: |
+          mkdir -p dist
+          cp task_app.py README.md Dockerfile tasks.json.example dist/
+      - name: Create manifest.txt
+        run: |
+          {
+            echo "CI_COMMIT_SHA=${{ github.sha }}"
+            echo "CI_PIPELINE_ID=${{ github.run_id }}"
+            echo "Files:"
+            ls -1 dist
+          } > dist/manifest.txt
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: task-app-dist
+          path: dist/
+          retention-days: 7
+
+  deploy_test:
+    name: Deploy to test/tasks (manual)
+    runs-on: ubuntu-latest
+    needs: package
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: test/tasks
+      url: https://example.com/test/tasks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: task-app-dist
+          path: dist
+      - name: Verify DEPLOY_TOKEN and APP_PORT
+        env:
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+        run: |
+          if [ -z "$DEPLOY_TOKEN" ]; then
+            echo "DEPLOY_TOKEN is not set"
+            exit 1
+          fi
+          echo "DEPLOY_TOKEN is set"
+          echo "APP_PORT=${{ vars.APP_PORT }}"
+      - name: Copy to deploy/test
+        run: |
+          mkdir -p deploy/test
+          cp -r dist/* deploy/test/
+      - name: Smoke test
+        run: python smoke_test.py
+      - name: Write deployment.txt
+        run: |
+          {
+            echo "Deployment time: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "Commit: ${{ github.sha }}"
+            echo "Pipeline: ${{ github.run_id }}"
+            echo "Environment: test/tasks"
+            echo "Smoke test: passed"
+          } > deployment.txt
+      - name: Upload deployment report
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-report
+          path: deployment.txt
+          retention-days: 7
