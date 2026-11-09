@@ -6,7 +6,7 @@ import sys
 
 
 
-DEFAULT_PRIORITY = "normal"
+DEFAULT_PRIORITY = "high"
 PRIORITIES = ["low", "normal", "high"]
 PRIORITY_ORDER = {"high": 0, "normal": 1, "low": 2}
 TASKS_FILE = "tasks.json"
