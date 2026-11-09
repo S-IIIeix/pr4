@@ -1,3 +1,5 @@
+---
+
 name: CI/CD Pipeline
 
 on:
@@ -114,3 +116,4 @@ jobs:
           name: deployment-report
           path: deployment.txt
           retention-days: 7
+          
