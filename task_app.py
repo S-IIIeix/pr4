@@ -20,8 +20,8 @@ class TaskManager:
             json.dump(self.tasks, f, ensure_ascii=False, indent=2)
 
     def add_task(self, title, priority="normal"):
-#        if not title or not title.strip():
-#            raise TaskError("Название задачи не может быть пустым")
+        if not title or not title.strip():
+            raise TaskError("Название задачи не может быть пустым")
         task = {"id": len(self.tasks) + 1, "title": title.strip(), "priority": priority}
         self.tasks.append(task)
         self._save()
